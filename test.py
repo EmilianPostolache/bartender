@@ -7,10 +7,12 @@ Created on Thu Feb  7 11:51:16 2019
 
 import random
 
-import speech_recognition as sr
 import spacy
 import os
 import subprocess
+from utils import text2int, join_with_and
+import datetime
+import speech_recognition as sr
 
 
 class Bar:
@@ -83,8 +85,14 @@ class Bartender:
                 return 'Please be more specific.'
 
     def greetings(self, doc):
-        # usare l'ora per rispondere
-        greeting_1 = ["Hello!", "Hi!", "Greetings!"] # "Good evening!", "Good morning!",
+        now = datetime.datetime.now()
+        if now.hour >= 6 and now.hour < 12:
+            a = "Good morning"
+        elif now.hour >= 12 and now.hour < 19:
+            a = "Good afternoon"
+        else:
+            a = "Good evening"
+        greeting_1 = ["Hello!", "Hi!", "Greetings!", a] # "Good evening!", "Good morning!",
                             #"Good afternoon!"]
         greeting_2 = [". what can I do for you?", ". What would you like?"]
         for sentence in doc.sents:
@@ -96,47 +104,71 @@ class Bartender:
     def specific_order(self, doc):
         # spacy returns verbs at ininity form with .lemma_
         ordering_verbs = ["order", "like", "have", "take", "make", "give", "want", "get", "buy", "add"]
-        answers_positive = ["Would you like to add something else?", "Anything else to drink?"]
-        answers_negative = ["I'm sorry but we don't have that, would you like something else?"]
-        answers_suggest = ["Unfortunately we ran out of that drink. I can suggest you a fresh [noun]. " +
+        answers_positive = ["Ok I will add that to the list! Would you like to add something else?",
+                            "Got it! Anything else to drink?"]
+        answers_partial = ["Ok I will add [noun1] to the list. Unfortunately we don't have [noun2]"] #  "I'm sorry but we don't have that, would you like something else?"]
+        answers_suggest = ["I will add [noun1] to the order. Unfortunately we don't have [noun2]. I can suggest you a fresh [noun3]. " +
                            "Would you like it?"]
 
         # DEBUG
         for token in doc:
-            print('text: ' + token.text, 'lemma: ' + token.lemma_, 'tag: ' + token.tag_, 'pos: ' + token.pos_,
-                  'head.lemma: ' + token.head.lemma_, sep=' '*10)
+            print('text: ' + token.text, 'lemma: ' + token.lemma_, 'tag: ' + token.tag_,
+                  'pos: ' + token.pos_, 'head.lemma: ' + token.head.lemma_)
             print('\n')
 
-        local_order = {}
+#       local_order = {}
+        bad_items = set()
+        ordered_items = {}
 
         for span in doc.noun_chunks:
-            token = span.root
-            if (token.tag_ == 'NNP' and token.dep_ == 'dobj' and
-                    token.head.lemma_ in ordering_verbs and token.head.dep_ == 'ROOT'):
-                if (t)
+            root = span.root
+            if root.dep_ == 'nsubj':
+                continue
+            if (root.pos_ == 'NOUN' and root.dep_ == 'dobj' and
+                root.head.lemma_ in ordering_verbs and root.head.dep_ == 'ROOT'):
 
-
-        for token in doc:
-            # dobbiamo pensare al controllo sul complemento oggeto e piu in la
-            # un meccanismo che fa capire se quella parola sia una birra/ un vino (in modo semantico)
-            # print(token.tag_, token.head.text, token.lemma_)
-            if token.tag_ == "NNP" and token.head.lemma_ in ordering_verbs and token.dep_ == 'dobj':
-                if token.lemma_ in [drink.name for drink in self.bar.get_drinks()]:
-                    self.state = 'waiting_order'
-                    self.orders.append(self.bar.get_drink(token.lemma_))
-                    return random.choice(answers_positive)
-
+                if root.lemma_ in [drink.name for drink in self.bar.get_drinks()]:
+                    ordered_items.setdefault(root.lemma_, 0)
+                    num = 1
+                    for token in span:
+                        if token.pos_ == 'NUM' and token.dep_ == 'nummod' and token.head == root:
+                            num = text2int(token.lemma_)
+                            break
+                    ordered_items[root.lemma_] += num
                 else:
-                    if random.random() < 0.5:
-                        self.state = 'waiting_order'
-                        return random.choice(answers_negative)
-                    else:
-                        self.state = 'accept_suggestion'
-                        a = random.choice(self.bar.get_drinks())
-                        self.suggested_drink = a
-                        answer_suggest = random.choice(answers_suggest)
-                        answer_suggest = answer_suggest.replace("[noun]", a.name)
-                        return answer_suggest
+                    bad_items.add(root.lemma_)
+
+        if ordered_items:
+            self.state = 'waiting_order'
+            for item in ordered_items:
+                self.orders.setdefault(item, 0)
+                self.orders[item] += ordered_items[item]
+
+            if not bad_items:
+                return random.choice(answers_positive)
+
+            if ordered_items:
+                if len(bad_items) > 1:
+                    answer_partial = random.choice(answers_partial)
+
+                    noun1 = join_with_and([str(num) + ' ' + item for (item, num) in ordered_items.values()])
+                    noun2 = join_with_and(bad_items)
+
+                    answer_partial.replace('[noun1]', noun1)
+                    answer_partial.replace('[noun1]', noun2)
+
+                elif len(bad_items) == 1:
+                    self.state = 'accept_suggestion'
+                    a = random.choice(self.bar.get_drinks())
+                    self.suggested_drink = a
+
+                    answer_suggest = random.choice(answers_suggest)
+                    noun1 = join_with_and([str(num) + ' ' + item for (item, num) in ordered_items.values()])
+
+                    answer_suggest.replace('[noun1]', noun1)
+                    answer_suggest = answer_suggest.replace("[noun2]", bad_items[0])
+                    answer_suggest = answer_suggest.replace("[noun3]", a.name)
+                    return answer_suggest
         return None
 
     def generic_order(self, doc):
@@ -336,7 +368,7 @@ def main_loop():
     bartender = Bartender(bar)
 
     while True:
-        doc = get_query()
+        doc  = get_query()
         answer = bartender.respond(doc)
         synthetize_speech(answer)
 
@@ -354,6 +386,8 @@ def synthetize_speech(text):
     elif sys.platform == 'win32':
         import pyttsx3
         engine = pyttsx3.init()
+        engine.setProperty('voice', 'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech\Voices\Tokens\TTS_MS_EN-US_ZIRA_11.0')
+        voiceEngine.setProperty('rate', 125)
         engine.say(text)
         engine.runAndWait()
     else:
