@@ -2,7 +2,7 @@
 """
 Created on Thu Feb  7 11:51:16 2019
 
-@author: lorenzo
+@author: lorenzo & emilian
 """
 
 import random
@@ -11,8 +11,6 @@ import speech_recognition as sr
 import spacy
 import os
 import subprocess
-from gtts import gTTS
-import pyttsx3
 
 
 class Bar:
@@ -113,9 +111,10 @@ class Bartender:
 
         for span in doc.noun_chunks:
             token = span.root
-            if (span.root.tag_ == 'NNP' and span.root.dep_ == 'dobj' and
-                    span.root.head.lemma_ in ordering_verbs and span.root.head.dep_ == 'ROOT'):
-                token =
+            if (token.tag_ == 'NNP' and token.dep_ == 'dobj' and
+                    token.head.lemma_ in ordering_verbs and token.head.dep_ == 'ROOT'):
+                if (t)
+
 
         for token in doc:
             # dobbiamo pensare al controllo sul complemento oggeto e piu in la
@@ -293,8 +292,8 @@ def get_query():
     with sr.Microphone() as source:
         audio = r.listen(source)
     text = r.recognize_google(audio)
-    #nlp = spacy.load('en_core_web_lg')
-    nlp = spacy.load('en')
+    nlp = spacy.load('en_core_web_lg')
+    # nlp = spacy.load('en')
 
     doc = nlp(text)
     return doc
@@ -345,13 +344,15 @@ def main_loop():
 def synthetize_speech(text):
     import sys
     if sys.platform == 'linux':
+        from gtts import gTTS
         tts = gTTS(text=text, lang='en')
-        filename = '\tmp\tmp.mp3'
+        filename = '/tmp/tmp.mp3'
         tts.save(filename)
         with open(os.devnull, 'wb') as devnull:
-            p = subprocess.check_call(['mpg321', filename], stdout=devnull, stderr=subprocess.STDOUT)
-        os.remove(filename)  # remove temperory file
+            subprocess.check_call(['mpg321', filename], stdout=devnull, stderr=subprocess.STDOUT)
+        os.remove(filename)
     elif sys.platform == 'win32':
+        import pyttsx3
         engine = pyttsx3.init()
         engine.say(text)
         engine.runAndWait()
