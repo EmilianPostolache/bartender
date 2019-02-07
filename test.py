@@ -332,7 +332,7 @@ def main_loop():
     bartender = Bartender(bar)
 
     while True:
-        doc = get_query()
+        doc  = get_query()
         answer = bartender.respond(doc)
         synthetize_speech(answer)
 
@@ -348,6 +348,8 @@ def synthetize_speech(text):
         os.remove(filename)  # remove temperory file
     elif sys.platform == 'win32':
         engine = pyttsx3.init()
+        engine.setProperty('voice', 'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech\Voices\Tokens\TTS_MS_EN-US_ZIRA_11.0')
+        voiceEngine.setProperty('rate', 125)
         engine.say(text)
         engine.runAndWait()
     else:
