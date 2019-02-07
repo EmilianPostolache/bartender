@@ -144,7 +144,7 @@ class Bartender:
             # dobbiamo pensare al controllo sul complemento oggeto e piu in la
             # un meccanismo che fa capire se quella parola sia una birra/ un vino (in modo semantico)
             # print(token.tag_, token.head.text, token.lemma_)
-            if token.tag_ == "NNP" and token.head.lemma_ in ordering_verbs and token.dep_ == 'dobj':
+            if token.pos_ == "NOUN" and token.head.lemma_ in ordering_verbs and token.dep_ == 'dobj':
                 if token.lemma_ in [drink.name for drink in self.bar.get_drinks()]:
                     self.state = 'waiting_order'
                     self.orders.append(self.bar.get_drink(token.lemma_))
@@ -207,7 +207,7 @@ class Bartender:
             # un meccanismo che fa capire se quella parola sia una birra/ un vino (in modo semantico)
             # print(token.tag_, token.head.text, token.lemma_)
             if token.pos_ == "VERB" and token.lemma_ in suggestion_verbs:
-                a =  self.suggest(None)
+                a = a = self.suggest(None)
                 answers_suggest = ["In my opinion " + a.name + " is really good. Would you try it?"]
                 self.state = 'accept_suggestion'
                 self.suggested_drink = a
@@ -315,7 +315,7 @@ def get_query():
     r = sr.Recognizer()
     with sr.Microphone() as source:
         audio = r.listen(source)
-    text = r.recognize_google(audio)
+    text = r.recognize_google(audio,language = "en-US")
     #nlp = spacy.load('en_core_web_lg')
     nlp = spacy.load('en')
 
@@ -365,7 +365,7 @@ def synthetize_speech(text):
     elif sys.platform == 'win32':
         engine = pyttsx3.init()
         engine.setProperty('voice', 'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech\Voices\Tokens\TTS_MS_EN-US_ZIRA_11.0')
-        voiceEngine.setProperty('rate', 125)
+        engine.setProperty('rate', 125)
         engine.say(text)
         engine.runAndWait()
     else:
