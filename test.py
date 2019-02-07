@@ -13,6 +13,8 @@ import os
 import subprocess
 from gtts import gTTS
 import pyttsx3
+import datetime
+
 
 
 class Bar:
@@ -85,8 +87,14 @@ class Bartender:
                 return 'Please be more specific.'
 
     def greetings(self, doc):
-        # usare l'ora per rispondere
-        greeting_1 = ["Hello!", "Hi!", "Greetings!"] # "Good evening!", "Good morning!",
+        now = datetime.datetime.now()
+        if now.hour >= 6 and now.hour < 12:
+            a = "Good morning"
+        elif now.hour >= 12 and now.hour < 19:
+            a = "Good afternoon"
+        else:
+            a = "Good evening"
+        greeting_1 = ["Hello!", "Hi!", "Greetings!", a] # "Good evening!", "Good morning!",
                             #"Good afternoon!"]
         greeting_2 = [". what can I do for you?", ". What would you like?"]
         for sentence in doc.sents:
@@ -111,6 +119,8 @@ class Bartender:
 
         local_order = {}
 
+
+        # galfjslajflsajfsajla
         for span in doc.noun_chunks:
             token = span.root
             if (span.root.tag_ == 'NNP' and span.root.dep_ == 'dobj' and
