@@ -53,8 +53,6 @@ class Bartender:
     STATES = ['new_client', 'waiting_order', 'payment', 'accept_suggestion']
     GREETING_QUERIES = ["hello", "hi", "greetings", "good evening", "what's up", "good morning",
                         "good afternoon", "hey", "yo"]
-    
-    
 
     def __init__(self, bar):
         self.bar = bar
@@ -62,8 +60,6 @@ class Bartender:
         self.orders = {}
         self.suggested_drink = None
 
-
-            
     def suggest(self,category):
         #suggest the most expensive drink
         a = 0
@@ -72,10 +68,8 @@ class Bartender:
                 c = drink
                 a = drink.price
         return c
-    
 
     def respond(self, doc):
-
         if self.state == 'new_client':
             intents = ['check_sentence', 'greetings', 'specific_order', 'suggestion',  'generic_order',
                        'leave', 'not_understood']
@@ -106,8 +100,7 @@ class Bartender:
             a = "Good afternoon"
         else:
             a = "Good evening"
-        greeting_1 = ["Hello!", "Hi!", "Greetings!", a] # "Good evening!", "Good morning!",
-                            #"Good afternoon!"]
+        greeting_1 = ["Hello!", "Hi!", "Greetings!", a]
         greeting_2 = [". what can I do for you?", ". What would you like?"]
         for sentence in doc.sents:
             if sentence.text not in self.GREETING_QUERIES:
@@ -127,26 +120,37 @@ class Bartender:
         # DEBUG
         for token in doc:
             print('text: ' + token.text, 'lemma: ' + token.lemma_, 'tag: ' + token.tag_,
-                  'pos: ' + token.pos_, 'head.lemma: ' + token.head.lemma_)
+                  'pos: ' + token.pos_, 'head.lemma: ' + token.head.lemma_, 'dep_:' + token.dep_, sep=' ' * 4)
             print('\n')
 
 #       local_order = {}
         bad_items = set()
         ordered_items = {}
+        print(list(doc.noun_chunks))
 
         for span in doc.noun_chunks:
             root = span.root
+            # penso che il controlo sulla dipendency venga fatto qua, non solo il nsubj potrebbe essere tra
+            # parole che non ci interessano
+            # non ci deve essere una dipendenza dal root quindi l'ho tolta
             if root.dep_ == 'nsubj':
                 continue
-            if (root.pos_ == 'NOUN' and root.dep_ == 'dobj' and
-                root.head.lemma_ in ordering_verbs and root.head.dep_ == 'ROOT'):
 
+            if (((root.pos_ == 'NOUN' or root.pos_ == "PROPN") and root.dep_ == 'dobj' and
+                root.head.lemma_ in ordering_verbs) or
+                (root.dep_ == 'conj' and (root.head.pos_ == 'NOUN' or root.head.pos_ == "PROPN")) or
+                (root.dep_ == 'appos' and (root.head.pos_ == 'NOUN' or root.head.pos_ == "PROPN"))):
+
+                print("I'm in!")
                 if root.lemma_ in [drink.name for drink in self.bar.get_drinks()]:
                     ordered_items.setdefault(root.lemma_, 0)
                     num = 1
                     for token in span:
                         if token.pos_ == 'NUM' and token.dep_ == 'nummod' and token.head == root:
-                            num = text2int(token.lemma_)
+                            try:
+                                num = int(token.lemma_)
+                            except ValueError:
+                                num = text2int(token.lemma_)
                             break
                     ordered_items[root.lemma_] += num
                 else:
@@ -155,8 +159,8 @@ class Bartender:
         if ordered_items:
             self.state = 'waiting_order'
             for item in ordered_items:
-                self.orders.setdefault(item, 0)
-                self.orders[item] += ordered_items[item]
+                self.orders.setdefault(self.bar.get_drink(item), 0)
+                self.orders[self.bar.get_drink(item)] += ordered_items[item]
 
             if not bad_items:
                 return random.choice(answers_positive)
@@ -165,11 +169,12 @@ class Bartender:
                 if len(bad_items) > 1:
                     answer_partial = random.choice(answers_partial)
 
-                    noun1 = join_with_and([str(num) + ' ' + item for (item, num) in ordered_items.values()])
+                    noun1 = join_with_and([str(num) + ' ' + item for item, num in ordered_items.items()])
                     noun2 = join_with_and(bad_items)
 
                     answer_partial.replace('[noun1]', noun1)
                     answer_partial.replace('[noun1]', noun2)
+                    return answer_partial
 
                 elif len(bad_items) == 1:
                     self.state = 'accept_suggestion'
@@ -177,10 +182,10 @@ class Bartender:
                     self.suggested_drink = a
 
                     answer_suggest = random.choice(answers_suggest)
-                    noun1 = join_with_and([str(num) + ' ' + item for (item, num) in ordered_items.values()])
+                    noun1 = join_with_and([str(num) + ' ' + item for item, num in ordered_items.items()])
 
                     answer_suggest.replace('[noun1]', noun1)
-                    answer_suggest = answer_suggest.replace("[noun2]", bad_items[0])
+                    answer_suggest = answer_suggest.replace("[noun2]", bad_items.pop())
                     answer_suggest = answer_suggest.replace("[noun3]", a.name)
                     return answer_suggest
         return None
@@ -359,7 +364,6 @@ def main_loop():
     bar.add_drink(Drink("franziskaner", "beer", 3.5))
     bar.add_drink(Drink("leffe", "beer", 4.))
     bar.add_drink(Drink("ceres", "beer", 5.))
-    bar.add_drink(Drink("ceres", "beer", 5.))
 
     bar.add_drink(Drink("gotto d'oro", "wine", 1.5))
     bar.add_drink(Drink("nero d'avola", "wine", 7.))
@@ -389,7 +393,7 @@ def synthetize_speech(text):
         import pyttsx3
         engine = pyttsx3.init()
         engine.setProperty('voice', 'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech\Voices\Tokens\TTS_MS_EN-US_ZIRA_11.0')
-        voiceEngine.setProperty('rate', 125)
+        engine.setProperty('rate', 125)
         engine.say(text)
         engine.runAndWait()
     else:

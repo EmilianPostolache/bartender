@@ -38,6 +38,7 @@ def join_with_and(collection):
         elif i != 0 and i == len(collection) - 1:
             string += 'and'
         string += x
+    return string
 
 
 
