@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Feb  7 11:51:16 2019
+
+@author: lorenzo
+"""
+
 import random
 
 import speech_recognition as sr
@@ -6,6 +13,7 @@ import os
 import subprocess
 from gtts import gTTS
 import enum
+import pyttsx3
 
 
 class Bar:
@@ -330,12 +338,20 @@ def main_loop():
 
 
 def synthetize_speech(text):
-    tts = gTTS(text=text, lang='en')
-    filename = '/tmp/temp.mp3'
-    tts.save(filename)
-    with open(os.devnull, 'wb') as devnull:
-        p = subprocess.check_call(['mpg321', filename], stdout=devnull, stderr=subprocess.STDOUT)
-    os.remove(filename)  # remove temperory file
+    import sys
+    if sys.platform == 'linux':
+        tts = gTTS(text=text, lang='en')
+        filename = '\tmp\tmp.mp3'
+        tts.save(filename)
+        with open(os.devnull, 'wb') as devnull:
+            p = subprocess.check_call(['mpg321', filename], stdout=devnull, stderr=subprocess.STDOUT)
+        os.remove(filename)  # remove temperory file
+    elif sys.platform == 'win32':
+        engine = pyttsx3.init()
+        engine.say(text)
+        engine.runAndWait()
+    else:
+        raise RuntimeError("Your operating system is obsolete!")
 
 
 if __name__ == '__main__':
