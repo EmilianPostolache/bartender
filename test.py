@@ -12,7 +12,6 @@ import spacy
 import os
 import subprocess
 from gtts import gTTS
-import enum
 import pyttsx3
 
 
@@ -52,17 +51,13 @@ class Drink:
 
 class Bartender:
     STATES = ['new_client', 'waiting_order', 'payment', 'accept_suggestion']
-    # INTENTS : 'check_sentence' 'greetings', 'specific_order', 'generic_order', 'suggestion',
-    #           'exit', 'end_order', 'delete_order', 'confirmation_suggestion'
-    #           'confirmation_payment', 'reorder', 'retry_payment', 'not_understood'
-
     GREETING_QUERIES = ["hello", "hi", "greetings", "good evening", "what's up", "good morning",
                         "good afternoon", "hey", "yo"]
 
     def __init__(self, bar):
         self.bar = bar
         self.state = 'new_client'
-        self.orders = []
+        self.orders = {}
         self.suggested_drink = None
 
     def respond(self, doc):
@@ -75,7 +70,7 @@ class Bartender:
                        'leave',  'delete_item', 'not_understood']
         elif self.state == 'accept_suggestion':
             intents = ['check_sentence', 'confirmation_suggestion',  'leave',  'not_understood']
-        elif self.state == 'payment':
+        else:
             intents = ['check_sentence', 'confirmation_payment', 'leave', 'not_understood']
         for intent in intents:
             answer = getattr(self, intent)(doc)
@@ -102,13 +97,11 @@ class Bartender:
 
     def specific_order(self, doc):
         # spacy returns verbs at ininity form with .lemma_
-        ordering_verbs = ["order", "can", "like", "have", "take", "make", "give", "want", "get", "buy", "add"]
-        answers_positive = ["would you like to add something else?", "anything else to drink?"]
+        ordering_verbs = ["order", "like", "have", "take", "make", "give", "want", "get", "buy", "add"]
+        answers_positive = ["Would you like to add something else?", "Anything else to drink?"]
         answers_negative = ["I'm sorry but we don't have that, would you like something else?"]
-        a = random.choice(self.bar.get_drinks())
-
-        answers_suggest = ["Unfortunately we ran out of that drink. I can suggest you a fresh "
-                           + a.name + ". Would you like it?"]
+        answers_suggest = ["Unfortunately we ran out of that drink. I can suggest you a fresh [noun]. " +
+                           "Would you like it?"]
 
         # DEBUG
         for token in doc:
@@ -116,23 +109,35 @@ class Bartender:
                   'head.lemma: ' + token.head.lemma_, sep=' '*10)
             print('\n')
 
+        local_order = {}
+
+        for span in doc.noun_chunks:
+            token = span.root
+            if (span.root.tag_ == 'NNP' and span.root.dep_ == 'dobj' and
+                    span.root.head.lemma_ in ordering_verbs and span.root.head.dep_ == 'ROOT'):
+                token =
+
         for token in doc:
             # dobbiamo pensare al controllo sul complemento oggeto e piu in la
             # un meccanismo che fa capire se quella parola sia una birra/ un vino (in modo semantico)
             # print(token.tag_, token.head.text, token.lemma_)
-            if token.tag_ == "NNP" and token.head.lemma_ in ordering_verbs:
+            if token.tag_ == "NNP" and token.head.lemma_ in ordering_verbs and token.dep_ == 'dobj':
                 if token.lemma_ in [drink.name for drink in self.bar.get_drinks()]:
                     self.state = 'waiting_order'
                     self.orders.append(self.bar.get_drink(token.lemma_))
                     return random.choice(answers_positive)
+
                 else:
                     if random.random() < 0.5:
                         self.state = 'waiting_order'
                         return random.choice(answers_negative)
                     else:
                         self.state = 'accept_suggestion'
+                        a = random.choice(self.bar.get_drinks())
                         self.suggested_drink = a
-                        return random.choice(answers_suggest)
+                        answer_suggest = random.choice(answers_suggest)
+                        answer_suggest = answer_suggest.replace("[noun]", a.name)
+                        return answer_suggest
         return None
 
     def generic_order(self, doc):
