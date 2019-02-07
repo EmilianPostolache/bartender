@@ -55,12 +55,26 @@ class Bartender:
     STATES = ['new_client', 'waiting_order', 'payment', 'accept_suggestion']
     GREETING_QUERIES = ["hello", "hi", "greetings", "good evening", "what's up", "good morning",
                         "good afternoon", "hey", "yo"]
+    
+    
 
     def __init__(self, bar):
         self.bar = bar
         self.state = 'new_client'
         self.orders = {}
         self.suggested_drink = None
+
+
+            
+    def suggest(self,category):
+        #suggest the most expensive drink
+        a = 0
+        for drink in self.bar.get_drinks(category):
+            if a < drink.price:
+                c = drink
+                a = drink.price
+        return c
+    
 
     def respond(self, doc):
 
@@ -123,9 +137,8 @@ class Bartender:
         # galfjslajflsajfsajla
         for span in doc.noun_chunks:
             token = span.root
-            if (span.root.tag_ == 'NNP' and span.root.dep_ == 'dobj' and
-                    span.root.head.lemma_ in ordering_verbs and span.root.head.dep_ == 'ROOT'):
-                token =
+            #if (span.root.tag_ == 'NNP' and span.root.dep_ == 'dobj' and
+             #       span.root.head.lemma_ in ordering_verbs and span.root.head.dep_ == 'ROOT'):
 
         for token in doc:
             # dobbiamo pensare al controllo sul complemento oggeto e piu in la
@@ -143,7 +156,7 @@ class Bartender:
                         return random.choice(answers_negative)
                     else:
                         self.state = 'accept_suggestion'
-                        a = random.choice(self.bar.get_drinks())
+                        a = self.suggest(None) # can be modified wrt wine or beer
                         self.suggested_drink = a
                         answer_suggest = random.choice(answers_suggest)
                         answer_suggest = answer_suggest.replace("[noun]", a.name)
@@ -172,7 +185,7 @@ class Bartender:
                             answer = answer + ' '.join([drink.name for drink in self.bar.get_drinks(category)])
                             return answer
                         else:
-                            a = random.choice(self.bar.get_drinks(category))
+                            a = self.suggest(None)
                             self.state = 'accept_suggestion'
                             answer = random.choice(answers_suggest)
                             answer = answer.replace("[noun]", a.name)
@@ -194,7 +207,7 @@ class Bartender:
             # un meccanismo che fa capire se quella parola sia una birra/ un vino (in modo semantico)
             # print(token.tag_, token.head.text, token.lemma_)
             if token.pos_ == "VERB" and token.lemma_ in suggestion_verbs:
-                a = random.choice(self.bar.get_drinks())
+                a =  self.suggest(None)
                 answers_suggest = ["In my opinion " + a.name + " is really good. Would you try it?"]
                 self.state = 'accept_suggestion'
                 self.suggested_drink = a
@@ -326,23 +339,11 @@ def main_loop():
     bar.add_drink(Drink("ceres", "beer", 5.))
     bar.add_drink(Drink("ceres", "beer", 5.))
 
-    bar.add_drink(Drink("ichnusa", "beer", 3.))
-    bar.add_drink(Drink("ipa", "beer", 5.))
-    bar.add_drink(Drink("blanche", "beer", 5.))
-    bar.add_drink(Drink("heineken", "beer", 3.))
-    bar.add_drink(Drink("moretti", "beer", 3.))
-    bar.add_drink(Drink("peroni", "beer", 2.5))
-    bar.add_drink(Drink("budweiser", "beer", 3.))
-    bar.add_drink(Drink("tuborg", "beer", 2.5))
-    bar.add_drink(Drink("bavaria", "beer", 1.))
-    bar.add_drink(Drink("franziskaner", "beer", 3.5))
-    bar.add_drink(Drink("leffe", "beer", 4.))
-    bar.add_drink(Drink("ceres", "beer", 5.))
-    bar.add_drink(Drink("ceres", "beer", 5.))
-
     bar.add_drink(Drink("gotto d'oro", "wine", 1.5))
     bar.add_drink(Drink("nero d'avola", "wine", 7.))
     bar.add_drink(Drink("prosecco DOP", "wine", 10.))
+
+     
 
     bartender = Bartender(bar)
 
@@ -373,3 +374,5 @@ def synthetize_speech(text):
 
 if __name__ == '__main__':
     main_loop()
+
+# git add / git commit / git push e pull
