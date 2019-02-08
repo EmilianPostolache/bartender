@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
 """
 Created on Thu Feb  7 11:51:16 2019
+
 @author: lorenzo & emilian
 """
 
 import random
+import sys
 import spacy
 import os
 import subprocess
 from utils import text2int, join_with_and
 import datetime
 import speech_recognition as sr
-import numpy as np
+
 
 class Bar:
     def __init__(self):
@@ -48,7 +50,7 @@ class Drink:
 
 
 class Bartender:
-    STATES = ['new_client', 'waiting_order', 'payment', 'accept_suggestion','number_suggested']
+    STATES = ['new_client', 'waiting_order', 'payment', 'accept_suggestion']
     GREETING_QUERIES = ["hello", "hi", "greetings", "good evening", "what's up", "good morning",
                         "good afternoon", "hey", "yo"]
 
@@ -58,30 +60,16 @@ class Bartender:
         self.orders = {}
         self.suggested_drink = None
 
-    def suggest(self,category):     
-        #suggest with a probability as high as the price
-        probability = []
-        count = []
-        i = 0
-        total_price = 0
-        
+    def suggest(self,category):
+        #suggest the most expensive drink
+        a = 0
         for drink in self.bar.get_drinks(category):
-            probability.append(drink.price)
-            count.append(i)
-            i += 1
-            total_price = total_price + drink.price
-            
-        for i,t in enumerate(probability):
-            probability[i] = t/total_price
-            
-        n = np.random.choice(count, p = probability)
-        i = 0
-        for drink in self.bar.get_drinks(category):
-            if i == n:
-                return drink
-            i += 1
-        
-    def respond(self, doc):        
+            if a < drink.price:
+                c = drink
+                a = drink.price
+        return c
+
+    def respond(self, doc):
         if self.state == 'new_client':
             intents = ['check_sentence', 'greetings', 'specific_order', 'suggestion',  'generic_order',
                        'leave', 'not_understood']
@@ -90,38 +78,21 @@ class Bartender:
                        'leave',  'delete_item', 'not_understood']
         elif self.state == 'accept_suggestion':
             intents = ['check_sentence', 'confirmation_suggestion',  'leave',  'not_understood']
-        elif self.state == 'number_suggested':
-            intents = ['check_sentence', 'get_the_number', 'leave', 'not understood']
-        elif self.state == 'payment':
+        else:
             intents = ['check_sentence', 'confirmation_payment', 'leave', 'not_understood']
-        
         for intent in intents:
             answer = getattr(self, intent)(doc)
             if answer:
-                #debug
-                print(answer)
                 return answer
-        
-        
 
-    def check_sentence(self, doc):       
+    def check_sentence(self, doc):
         if len(list(doc.sents)) > 1:
             if doc.sents[0].text in self.GREETING_QUERIES:
                 return None
             else:
-                #we want just short sentences
-                return random.choice(['Please be more specific.',
-                                      'I think this does not make much sense, could you be more precise?',
-                                      'This goes beyond my knowledge, what did you mean?'])
-                
-                
-        # DEBUG
-        for token in doc:
-            print('text: ' + token.text, 'lemma: ' + token.lemma_, 'tag: ' + token.tag_,
-                  'pos: ' + token.pos_, 'head.lemma: ' + token.head.lemma_, 'dep_:' + token.dep_, sep=' ' * 4)
-            print('\n')
+                return 'Please be more specific.'
 
-    def greetings(self, doc):      
+    def greetings(self, doc):
         now = datetime.datetime.now()
         if now.hour >= 6 and now.hour < 12:
             a = "Good morning"
@@ -130,64 +101,63 @@ class Bartender:
         else:
             a = "Good evening"
         greeting_1 = ["Hello!", "Hi!", "Greetings!", a]
-        greeting_2 = [". We offer some of the best Earth beers and wine, what do you want to take?",
-                      ". I'Bender the bartender, what do you want to order?",
-                      ". Welcome to the Life On Mars pub, what can I do for you?"]
+        greeting_2 = [". what can I do for you?", ". What would you like?"]
         for sentence in doc.sents:
-            if sentence.text not in self.GREETING_QUERIES: #first sentence must be a greeting
+            if sentence.text not in self.GREETING_QUERIES:
                 return None
         self.state = 'waiting_order'
         return random.choice(greeting_1) + random.choice(greeting_2)
 
     def specific_order(self, doc):
-        # spacy returns verbs at infinity form with .lemma_
+        # spacy returns verbs at ininity form with .lemma_
         ordering_verbs = ["order", "like", "have", "take", "make", "give", "want", "get", "buy", "add"]
         answers_positive = ["Ok I will add that to the list! Would you like to add something else?",
-                            "Got it! Anything else to drink?",
-                            "Excellent choice! What else would you like to drink?"]
-        answers_partial = ["Ok I will add [noun1] to the list. Unfortunately we don't have [noun2]"]
+                            "Got it! Anything else to drink?"]
+        answers_partial = ["Ok I will add [noun1] to the list. Unfortunately we don't have [noun2]"] #  "I'm sorry but we don't have that, would you like something else?"]
         answers_suggest = ["I will add [noun1] to the order. Unfortunately we don't have [noun2]. I can suggest you a fresh [noun3]. " +
                            "Would you like it?"]
-        b =  ' '.join([drink.name for drink in self.bar.get_drinks(None)]) 
-        answers_negative = ["I'm sorry but we don't have that, would you like something else?",
-                            "Unfortunately we ran out of that, do you wish to order something else?"
-                            "We don't have such a drink, we just have  " + b + "  would you like any of these?" ]
-        
-        
+
+        # DEBUG
+        for token in doc:
+            print('text: ' + token.text, 'lemma: ' + token.lemma_, 'tag: ' + token.tag_,
+
+                  'pos: ' + token.pos_, 'head.lemma: ' + token.head.lemma_, 'dep_:' + token.dep_, sep=' ' * 4)
+            print('\n')
+
 #       local_order = {}
         bad_items = set()
         ordered_items = {}
         print(list(doc.noun_chunks))
-        #noun_chunks:  spacy command which divides 'noun plus the words' describing the noun
 
         for span in doc.noun_chunks:
             root = span.root
             # penso che il controlo sulla dipendency venga fatto qua, non solo il nsubj potrebbe essere tra
             # parole che non ci interessano
             # non ci deve essere una dipendenza dal root quindi l'ho tolta
-            if root.dep_ == 'nsubj': #ex I or Mary , this noun_chunk is not relevant
+            if root.dep_ == 'nsubj':
                 continue
+
 
             if (((root.pos_ == 'NOUN' or root.pos_ == "PROPN") and root.dep_ == 'dobj' and
                 root.head.lemma_ in ordering_verbs) or
                 (root.dep_ == 'conj' and (root.head.pos_ == 'NOUN' or root.head.pos_ == "PROPN")) or
                 (root.dep_ == 'appos' and (root.head.pos_ == 'NOUN' or root.head.pos_ == "PROPN"))):
-            
 
                 print("I'm in!")
+
                 if root.lemma_ in [drink.name for drink in self.bar.get_drinks()]:
                     ordered_items.setdefault(root.lemma_, 0)
                     num = 1
                     for token in span:
-                        if token.pos_ == 'NUM' and token.dep_ == 'nummod' and token.head == root: #number
+                        if token.pos_ == 'NUM' and token.dep_ == 'nummod' and token.head == root:
                             try:
                                 num = int(token.lemma_)
                             except ValueError:
                                 num = text2int(token.lemma_)
                             break
-                    ordered_items[root.lemma_] += num #works also with unspecified number = 1
+                    ordered_items[root.lemma_] += num
                 else:
-                    bad_items.add(root.lemma_) #items not in the list
+                    bad_items.add(root.lemma_)
 
         if ordered_items:
             self.state = 'waiting_order'
@@ -211,7 +181,7 @@ class Bartender:
 
                 elif len(bad_items) == 1:
                     self.state = 'accept_suggestion'
-                    a =  self.suggest(None)
+                    a = random.choice(self.bar.get_drinks())
                     self.suggested_drink = a
 
                     answer_suggest = random.choice(answers_suggest)
@@ -262,26 +232,13 @@ class Bartender:
         # give an [ADJ] choice
         suggestion_verbs = ["advice", "recommend", "suggest", "think"]
 
-        for token in doc: #look for a suggestion of a certain category
-                            
-                if (token.tag_ == "NN" and token.lemma_ in Drink.CATEGORY and token.head.pos_ == "VERB"  
-                    and token.head.lemma_ in suggestion_verbs):
-                    a = self.suggest(token.lemma_)
-                    answer_suggest = ["I recommend you a  " + a.name + "  which is an excellent " + token.lemma_ ,
-                                      "I advise you a  " + a.name + "  it's really a good one",
-                                      "You should try the  " + a.name + "  it's a very typical Earth " + token.lemma_ ]
-                    self.state = 'accept_suggestion'
-                    self.suggested_drink = a
-                    return random.choice(answer_suggest)
-                
-        for token in doc: #look for a generic suggestion
-            
+        for token in doc:
+            # dobbiamo pensare al controllo sul complemento oggeto e piu in la
+            # un meccanismo che fa capire se quella parola sia una birra/ un vino (in modo semantico)
+            # print(token.tag_, token.head.text, token.lemma_)
             if token.pos_ == "VERB" and token.lemma_ in suggestion_verbs:
-
-                a =  self.suggest(None)
-                answers_suggest = ["In my opinion " + a.name + " is really good. Would you try it?",
-                                   "You can't say you have tried the Earth taste until you drink the " + a.name ,
-                                   "The " + a.name + " is renowned among terrestrial beings " ]
+                a = a = self.suggest(None)
+                answers_suggest = ["In my opinion " + a.name + " is really good. Would you try it?"]
                 self.state = 'accept_suggestion'
                 self.suggested_drink = a
                 return random.choice(answers_suggest)
@@ -341,8 +298,8 @@ class Bartender:
 
 
     def not_understood(self, doc):
-        answers = ["sorry I didn't understood, please rephrase ",
-                   "I didn't get what you said, try to say that again",
+        answers = ["sorry I didn't understood, could you repeat please?",
+                   "I didn't get what you said, can you rephrase it?",
                    "what did you mean with that?"]
         return random.choice(answers)
 
@@ -357,70 +314,29 @@ class Bartender:
         return None
 
     def confirmation_suggestion(self, doc):
-        positive = ['yes', 'positive', 'okay', 'right', 'good', 'like', 'love', 'cool', 'course', 'ok']
+        positive = ['yes', 'positive', 'okay', 'right', 'good', 'like', 'love', 'cool', 'course']
         negative = ['no', 'nope', 'modify']
-        for token in doc.sents:
-            if token.text in positive:
-                num = 0
-                for j in doc:
-                    if j.text == 'a':
-                        num = 1
-                    if j.pos_ == 'NUM':
-                        try:
-                            num = int(token.lemma_)
-                        except ValueError:
-                            num = text2int(token.lemma_)
-                        break
-                if num != 0:
-                    self.orders[self.bar.get_drink(self.suggested_drink.name)] = num
-                    self.suggested_drink = None
-                    self.state = 'waiting_order'
-                    return random.choice["okay, I just added it, would you like to add something?",
-                                         "Perfect, anything else?",
-                                         "You'll see, it's magnific, do you wish to add something else?"]
-                else:
-                    self.state = 'number_suggested'
-                    print(self.suggested_drink.name)
-                    return random.choice(["excellent, how many  " + self.suggested_drink.name + "   do you want?",
-                                         "perfect, how many  " + self.suggested_drink.name + "  shoudl I prepare ?"])
-            if token.text in negative:
+        for j in doc.text:
+            if j in positive:
+                self.orders.append(self.suggested_drink)
+                self.suggested_drink = None
+                self.state = 'waiting_order'
+                return "okay, I just added it, would you like to add something?"
+            if j in negative:
                 self.suggested_drink = None
                 self.state = 'waiting order'
                 return "No problem, so what else would you like?"
         return None
-    
-    def get_the_number(self, doc):
-        num = 0
-        for j in doc:
-            if j.text == 'a':
-                num = 1
-            if j.pos_ == 'NUM' or (j.tag_ == 'LS' and j.pos_ == 'PUNCT'):
-                try:
-                    num = int(j.lemma_)
-                except ValueError:
-                    num = text2int(j.lemma_)
-                break
-        if num == 0:
-            return "please, specify a number"
-        else:
-            self.orders[self.bar.get_drink(self.suggested_drink.name)] = num
-            self.suggested_drink = None
-            self.state = 'waiting_order'
-            return random.choice(["nice, would you like to add something?",
-                                 "Perfect, anything else?",
-                                 "Well done, do you wish to add something else?"])
 
     def delete_item(self, doc):
         query_verbs = ["remove", "delete", "drop"]
         answers = ["I have removed that drink from the order. Do you want to try something different?"]
 
         for token in doc:
-            if (token.pos_ == "NOUN" and token.lemma_ in [drink.name for drink in self.orders] and
+            if (token.tag_ == "NNP" and token.lemma_ in [drink.name for drink in self.orders] and
                token.head.pos_ == "VERB" and token.head.lemma_ in query_verbs):
                 self.orders.remove(self.bar.get_drink(token.lemma_))
                 return random.choice(answers)
-            
-        
 
         return None
 
@@ -429,6 +345,13 @@ def get_query():
     r = sr.Recognizer()
     with sr.Microphone() as source:
         audio = r.listen(source)
+        
+    """if sys.platform == 'win32':
+        text = r.recognize_google(audio,language = "en-US")
+        #nlp = spacy.load('en_core_web_lg')
+        nlp = spacy.load('en')"""
+
+    #elif sys.platform == 'linux':
     text = r.recognize_google(audio)
     nlp = spacy.load('en_core_web_lg')
     # nlp = spacy.load('en')
@@ -451,6 +374,7 @@ def main_loop():
     bar.add_drink(Drink("franziskaner", "beer", 3.5))
     bar.add_drink(Drink("leffe", "beer", 4.))
     bar.add_drink(Drink("ceres", "beer", 5.))
+
     bar.add_drink(Drink("gotto d'oro", "wine", 1.5))
     bar.add_drink(Drink("nero d'avola", "wine", 7.))
     bar.add_drink(Drink("prosecco DOP", "wine", 10.))
@@ -466,7 +390,6 @@ def main_loop():
 
 
 def synthetize_speech(text):
-    import sys
     if sys.platform == 'linux':
         from gtts import gTTS
         tts = gTTS(text=text, lang='en')
@@ -490,3 +413,5 @@ if __name__ == '__main__':
     main_loop()
 
 # git add / git commit / git push e pull
+    
+    # sajsakdad

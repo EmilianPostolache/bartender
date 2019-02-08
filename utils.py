@@ -46,3 +46,4 @@ def join_with_and(collection):
             string += 'and'
         string += x
     return string
+
