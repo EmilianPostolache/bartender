@@ -476,7 +476,7 @@ def main_loop():
     # nlp = spacy.load('en')
 
     while True:
-        doc = get_query(bartender, )
+        doc = get_query(bartender, nlp)
         answer = bartender.respond(doc)
         synthesize_speech(answer)
 
