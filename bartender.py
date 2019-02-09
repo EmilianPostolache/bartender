@@ -445,6 +445,7 @@ def get_query(bartender, nlp):
             except sr.WaitTimeoutError:
                 answer = bartender.encourage_talk()
                 synthesize_speech(answer)
+                time.sleep(1)
             except sr.RequestError:
                 # API was unreachable or unreasponsive
                 print("API UNAVAILABLE")
