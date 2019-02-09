@@ -427,36 +427,30 @@ class Bartender:
         answers = ["Don't be shy, we are the best bar on Mars, what do you want to get?",
                    "Whenever you want you can order",
                    "Anytime is a good time to Drink in the Life On Mars pub"]
+        return random.choice(answers)
 
 
-def get_query():
+def get_query(bartender, nlp):
     r = sr.Recognizer()
     with sr.Microphone() as source:
         # filtering the audio --> takes 0.5 seconds of preprocessing
-        #r.adjust_for_ambient_noise(source)
+        # r.adjust_for_ambient_noise(source)
         # timeout = max number of second wated for a phrase to start
-        try:
-            audio = r.listen(source, timeout = 3)
-        except sr.TimeoutError:
-            bartender.encourage_talk()
-            synthetize_speech(answer)
-        
-        try:
-            text = r.recognize_google(audio)   
-        except sr.RequestError:
-            #API was unreachable or unreasponsive
-            print("API UNAVAILABLE")
-            
-        except sr.UnknownValueError:
-            #speech unintelligible
-            print("speech not recognized")
-
-
-    nlp = spacy.load('en_core_web_lg')
-    # nlp = spacy.load('en')
-
-    doc = nlp(text)
-    return doc
+        while True:
+            try:
+                audio = r.listen(source, timeout=3)
+                text = r.recognize_google(audio)
+                doc = nlp(text)
+                return doc
+            except sr.WaitTimeoutError:
+                answer = bartender.encourage_talk()
+                synthesize_speech(answer)
+            except sr.RequestError:
+                # API was unreachable or unreasponsive
+                print("API UNAVAILABLE")
+            except sr.UnknownValueError:
+                # speech unintelligible
+                print("speech not recognized")
 
 
 def main_loop():
@@ -477,17 +471,17 @@ def main_loop():
     bar.add_drink(Drink("nero d'avola", "wine", 7.))
     bar.add_drink(Drink("prosecco DOP", "wine", 10.))
 
-     
-
     bartender = Bartender(bar)
+    nlp = spacy.load('en_core_web_lg')
+    # nlp = spacy.load('en')
 
     while True:
-        doc = get_query()
+        doc = get_query(bartender, )
         answer = bartender.respond(doc)
-        synthetize_speech(answer)
+        synthesize_speech(answer)
 
 
-def synthetize_speech(text):
+def synthesize_speech(text):
     import sys
     if sys.platform == 'linux':
         from gtts import gTTS
