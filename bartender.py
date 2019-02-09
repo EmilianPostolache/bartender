@@ -8,7 +8,7 @@ import random
 import spacy
 import os
 import subprocess
-from utils import text2int, join_with_and
+from utils import text2int, join_with_and, get_beer_list
 import datetime
 import speech_recognition as sr
 import numpy as np

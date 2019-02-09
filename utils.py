@@ -47,3 +47,12 @@ def join_with_and(collection):
         string += x
     return string
 
+
+def get_beer_list():
+    
+    file = open("beer_list.txt", "r")
+    a = file.readlines()
+    file.close()
+    return a
+
+
