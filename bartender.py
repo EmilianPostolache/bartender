@@ -292,32 +292,48 @@ class Bartender:
         positive = ['yes', 'positive', 'okay', 'right', 'good', 'yeah', 'yep', 'certainly']
         negative = ['no', "that's it", "it's enough", "that's all", "nothing else", "no more", "nope", "enough"]
         continue_answers = ["what can I do for you?", ". What would you like?"]
-        recap_answers = ["So, you have ordered the following: ", "A quick recap of what you've ordered: "]
-        payment_answers = [" You have to pay [noun] euros. Proceed with the payment?",
-                           " It's [noun] euros. Shall we proceed?"]
+        recap_answers = ["So, you have ordered   [noun1] ", "A quick recap of what you've ordered:   [noun1] "]
+        payment_answers = [" which amounts to [noun] euros. Proceed with the payment?",
+                           " that makes a total of [noun] euros. Shall we proceed?"]
+        nothing_ordered = ["Well that's not gonna cost anything since your order is empty... do you intend to actually order something?",
+                           "your order is empty, do you intend to actually order something?",
+                           "are you gonna order for real?"]
+        
         for token in doc:
             if token.lemma_ in positive:
                 self.state = 'waiting_order'
                 return random.choice(continue_answers)
             if (token.pos_ == "NOUN" and token.lemma_ == 'payment') or (token.pos_ == "VERB" and token.lemma_ == 'pay'):
                 self.state = 'payment'
-                recap_answer = random.choice(recap_answers) + ' '.join([drink.name for drink in self.orders])
+                recap_answer = random.choice(recap_answers)
+                noun1 = join_with_and([str(num) + ' ' + drink.name for drink,num in self.orders.items()])
+                recap_answer = recap_answer.replace("[noun1]", noun1)
                 payment_answer = random.choice(payment_answers)
-                #payment_answer = payment_answer.replace('[noun]', sum([drink.price for drink in self.orders]))
-                payment_answer = payment_answer.replace('[noun]', sum([n*drink.price for drink,n in self.orders.items()]))
+                pay = sum([n*drink.price for drink,n in self.orders.items()])
+                if pay % 1 == 0:
+                    pay = int(pay)
+                if pay == 0:
+                    self.state = 'waiting_order'
+                    return random.choice(nothing_ordered)
+                payment_answer = payment_answer.replace('[noun]', str(pay))
                 return recap_answer + payment_answer
 
         for phrase in negative:
             if phrase in doc.text:
                 self.state = 'payment'
-                recap_answer = random.choice(recap_answers) + ' '.join([drink.name for drink in self.orders]) #ADD NUMBER
+                recap_answer = random.choice(recap_answers)
+                noun1 = join_with_and([str(num) + ' ' + drink.name for drink,num in self.orders.items()])
+                recap_answer = recap_answer.replace("[noun1]", noun1)
                 payment_answer = random.choice(payment_answers)
-                #pay = sum([drink.price for drink in self.orders])
                 pay = sum([n*drink.price for drink,n in self.orders.items()])
                 if pay % 1 == 0:
                     pay = int(pay)
+                if pay == 0:
+                    self.state = 'waiting_order'
+                    return random.choice(nothing_ordered)
                 payment_answer = payment_answer.replace('[noun]', str(pay))
                 return recap_answer + payment_answer
+            
         return None
 
     def confirmation_payment(self, doc):
@@ -418,6 +434,9 @@ class Bartender:
                    "No problem  [noun1] have been succesfully removed, "]
         not_ans = ["please, specify the number of [noun1] to be removed"]
         recap = [" so far you have ordered [noun2],  do you wish to add or remove something?"]
+        invalid_delete = ["This is not a valid cancellation, how many [noun] do you want to cancel?",
+                          "can't do it, you have taken less than that, how many [noun] do you want to remove?"]
+
 
         num = 0
         for j in doc:
@@ -435,6 +454,9 @@ class Bartender:
             return 
         else:
             old_n = self.orders[self.bar.get_drink(self.remove_item)]
+            if (old_n - num) < 0:
+                inv_delete = random.choice(invalid_delete)
+                return inv_delete.replace("[noun]", self.remove_item )
             self.orders[self.bar.get_drink(self.remove_item)] = old_n - num
             self.state = 'waiting_order'
             noun1 = str(num) + ' ' + self.remove_item
@@ -458,6 +480,8 @@ class Bartender:
         recap = [" so far you have ordered [noun2],  do you wish to add or remove something?"]
         incomplete_sents = ["Okay, but please, tell me how many ",
                             "Yes I can do that, how many shall I remove ?"]
+        invalid_delete = ["This is not a valid cancellation, you have not taken so many, will you delete or add something properly?",
+                          "can't do it, you have taken less than that, are you going to add or delete something propery?]
 
         removed_items = {}
         enter = False
@@ -486,8 +510,11 @@ class Bartender:
                             elif token.lemma_ == 'a':
                                 num = 1
                         old_n = self.orders[self.bar.get_drink(root.lemma_)]
-                        self.orders[self.bar.get_drink(root.lemma_)] = old_n - num
-                        removed_items[root.lemma_] = num
+                        if (old_n - num > 0):
+                            self.orders[self.bar.get_drink(root.lemma_)] = old_n - num
+                            removed_items[root.lemma_] = num
+                        else:
+                            return random.choice(invalid_delete)
                     
                 
             elif ((token.pos_ == "NOUN" or token.pos_ == "PROPN") and token.lemma_ in [drink.name for drink in self.bar.get_drinks()] and
