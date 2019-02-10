@@ -93,7 +93,9 @@ class Bartender:
         elif self.state == 'accept_suggestion':
             intents = ['check_sentence', 'confirmation_suggestion',  'leave',  'not_understood']
         elif self.state == 'number_suggested':
-            intents = ['check_sentence', 'get_the_number', 'leave', 'not understood']
+            intents = ['check_sentence', 'get_the_number', 'leave', 'not_understood']
+        elif self.state == 'delete_number':
+            intents = ['check_sentence', 'removal_number', 'leave', 'not_understood']
         else:  # payment
             intents = ['check_sentence', 'confirmation_payment', 'delete_item', 'leave', 'not_understood']
         
@@ -409,14 +411,53 @@ class Bartender:
             return random.choice(["nice, would you like to add something?",
                                   "Perfect, anything else?",
                                   "Well done, do you wish to add something else?"])
+                        
+    def removal_number(self, doc):
+        answers = ["I have removed [noun1] .",
+                   "As you wish, so i deleted [noun1], ",
+                   "No problem  [noun1] have been succesfully removed, "]
+        not_ans = ["please, specify the number of [noun1] to be removed"]
+        recap = [" so far you have ordered [noun2],  do you wish to add or remove something?"]
+
+        num = 0
+        for j in doc:
+            if j.text == 'a':
+                num = 1
+            if j.pos_ == 'NUM' or (j.tag_ == 'LS' and j.pos_ == 'PUNCT'):
+                try:
+                    num = int(j.lemma_)
+                except ValueError:
+                    num = text2int(j.lemma_)
+                break
+        if num == 0:
+            not_an = random.choice(not_ans)
+            not_an = not_an.replace("[noun1]", self.remove_item)
+            return 
+        else:
+            old_n = self.orders[self.bar.get_drink(self.remove_item)]
+            self.orders[self.bar.get_drink(self.remove_item)] = old_n - num
+            self.state = 'waiting_order'
+            noun1 = str(num) + ' ' + self.remove_item
+            answer1 = random.choice(answers)
+            answer1 = answer1.replace('[noun1]', noun1) 
+            answer2 = random.choice(recap)
+            noun2 = join_with_and([str(num) + ' ' + drink.name for drink,num in self.orders.items()])
+            answer2 = answer2.replace("[noun2]", noun2)
+            answer = answer1 + answer2
+            self.remove_item = None
+            return answer
+            
 
     def delete_item(self, doc):
         # don't want, change, switch
         query_verbs = ["remove", "delete", "drop"]
-        answers = ["I have removed [noun1] . Do you want to try something different?",
-                   "As you wish, so i deleted [noun1], will you add something else?",
-                   "No problem  [noun1] have been succesfully removed, do you wish to substitue it with something else?"]
-        not_ordered_sen = ["I'm confused, you didn't order any [noun1] , do you want to add or delete something?"]
+        answers = ["I have removed [noun1] .",
+                   "As you wish, so i deleted [noun1], ",
+                   "No problem  [noun1] have been succesfully removed, "]
+        not_ordered_sen1 = ["I'm confused, you didn't order any [noun1] , "]
+        recap = [" so far you have ordered [noun2],  do you wish to add or remove something?"]
+        incomplete_sents = ["Okay, but please, tell me how many ",
+                            "Yes I can do that, how many shall I remove ?"]
 
         removed_items = {}
         enter = False
@@ -434,6 +475,7 @@ class Bartender:
                     
                     if root.lemma_ == token.lemma_:
                         num = 0
+                        remove_item = token.lemma_
                         for token in span:
                             if token.pos_ == 'NUM' and token.dep_ == 'nummod' and token.head == root:  # number
                                 try:
@@ -441,25 +483,38 @@ class Bartender:
                                 except ValueError:
                                     num = text2int(token.lemma_)
                                 break
+                            elif token.lemma_ == 'a':
+                                num = 1
                         old_n = self.orders[self.bar.get_drink(root.lemma_)]
                         self.orders[self.bar.get_drink(root.lemma_)] = old_n - num
                         removed_items[root.lemma_] = num
                     
-                    elif root.lemma_ not in [drink.name for drink in self.orders]:
-                        not_ordered = random.choice(not_ordered_sen)
-                        not_ordered = not_ordered.replace("[noun1]", root.lemma) #stops at first item not ordered
-                        return not_ordered
                 
+            elif ((token.pos_ == "NOUN" or token.pos_ == "PROPN") and token.lemma_ in [drink.name for drink in self.bar.get_drinks()] and
+                token.head.pos_ == "VERB" and token.head.lemma_ in query_verbs):
+                not_ordered1 = random.choice(not_ordered_sen1)
+                not_ordered1 = not_ordered1.replace("[noun1]", token.lemma_) #stops at first item not ordered
+                not_ordered2 = random.choice(recap)
+                noun2 = join_with_and([str(num) + ' ' + drink.name for drink,num in self.orders.items()])
+                not_ordered2 = not_ordered2.replace("[noun2]", noun2)
+                not_ordered = not_ordered1 + not_ordered2
+                return not_ordered
+
         if enter:
             if num == 0: 
-            #the number of items to be deleted is not specified
-                return "work in progress"
+            #the number of items to be deleted is not specified, works only for one item
+                self.remove_item = remove_item
+                self.state = 'delete_number'
+                return random.choice(incomplete_sents)
             else:
                 noun1 = join_with_and([str(num) + ' ' + item for item, num in removed_items.items()])
-                print(noun1)
-                answer = random.choice(answers)
-                answer = answer.replace('[noun1]', noun1) #should do a recap of the order
-                return random.choice(answer)
+                answer1 = random.choice(answers)
+                answer1 = answer1.replace('[noun1]', noun1) #should do a recap of the order
+                answer2 = random.choice(recap)
+                noun2 = join_with_and([str(num) + ' ' + drink.name for drink,num in self.orders.items()])
+                answer2 = answer2.replace("[noun2]", noun2)
+                answer = answer1 + answer2
+                return answer
             
         return None
     
