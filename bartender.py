@@ -12,6 +12,7 @@ from utils import text2int, join_with_and, get_beer_list
 import datetime
 import speech_recognition as sr
 import numpy as np
+import time
 
 
 class Bar:
@@ -94,7 +95,7 @@ class Bartender:
         elif self.state == 'number_suggested':
             intents = ['check_sentence', 'get_the_number', 'leave', 'not understood']
         else:  # payment
-            intents = ['check_sentence', 'confirmation_payment', 'leave', 'not_understood']
+            intents = ['check_sentence', 'confirmation_payment', 'delete_item', 'leave', 'not_understood']
         
         for intent in intents:
             answer = getattr(self, intent)(doc)
@@ -300,15 +301,17 @@ class Bartender:
                 self.state = 'payment'
                 recap_answer = random.choice(recap_answers) + ' '.join([drink.name for drink in self.orders])
                 payment_answer = random.choice(payment_answers)
-                payment_answer = payment_answer.replace('[noun]', sum([drink.price for drink in self.orders]))
+                #payment_answer = payment_answer.replace('[noun]', sum([drink.price for drink in self.orders]))
+                payment_answer = payment_answer.replace('[noun]', sum([n*drink.price for drink,n in self.orders.items()]))
                 return recap_answer + payment_answer
 
         for phrase in negative:
             if phrase in doc.text:
                 self.state = 'payment'
-                recap_answer = random.choice(recap_answers) + ' '.join([drink.name for drink in self.orders])
+                recap_answer = random.choice(recap_answers) + ' '.join([drink.name for drink in self.orders]) #ADD NUMBER
                 payment_answer = random.choice(payment_answers)
-                pay = sum([drink.price for drink in self.orders])
+                #pay = sum([drink.price for drink in self.orders])
+                pay = sum([n*drink.price for drink,n in self.orders.items()])
                 if pay % 1 == 0:
                     pay = int(pay)
                 payment_answer = payment_answer.replace('[noun]', str(pay))
@@ -408,14 +411,55 @@ class Bartender:
                                   "Well done, do you wish to add something else?"])
 
     def delete_item(self, doc):
+        # don't want, change, switch
         query_verbs = ["remove", "delete", "drop"]
-        answers = ["I have removed that drink from the order. Do you want to try something different?"]
+        answers = ["I have removed [noun1] . Do you want to try something different?",
+                   "As you wish, so i deleted [noun1], will you add something else?",
+                   "No problem  [noun1] have been succesfully removed, do you wish to substitue it with something else?"]
+        not_ordered_sen = ["I'm confused, you didn't order any [noun1] , do you want to add or delete something?"]
+
+        removed_items = {}
+        enter = False
 
         for token in doc:
-            if (token.pos_ == "NOUN" and token.lemma_ in [drink.name for drink in self.orders] and
-               token.head.pos_ == "VERB" and token.head.lemma_ in query_verbs):
-                self.orders.pop(self.bar.get_drink(token.lemma_))
-                return random.choice(answers)
+            if ((token.pos_ == "NOUN" or token.pos_ == "PROPN") and token.lemma_ in [drink.name for drink in self.orders] and
+                token.head.pos_ == "VERB" and token.head.lemma_ in query_verbs):
+                enter = True
+
+                for span in doc.noun_chunks:
+                    root = span.root
+
+                    if root.dep_ == 'nsubj':  # ex I or Mary , this noun_chunk is not relevant
+                        continue
+                    
+                    if root.lemma_ == token.lemma_:
+                        num = 0
+                        for token in span:
+                            if token.pos_ == 'NUM' and token.dep_ == 'nummod' and token.head == root:  # number
+                                try:
+                                    num = int(token.lemma_)
+                                except ValueError:
+                                    num = text2int(token.lemma_)
+                                break
+                        old_n = self.orders[self.bar.get_drink(root.lemma_)]
+                        self.orders[self.bar.get_drink(root.lemma_)] = old_n - num
+                        removed_items[root.lemma_] = num
+                    
+                    elif root.lemma_ not in [drink.name for drink in self.orders]:
+                        not_ordered = random.choice(not_ordered_sen)
+                        not_ordered = not_ordered.replace("[noun1]", root.lemma) #stops at first item not ordered
+                        return not_ordered
+                
+        if enter:
+            if num == 0: 
+            #the number of items to be deleted is not specified
+                return "work in progress"
+            else:
+                noun1 = join_with_and([str(num) + ' ' + item for item, num in removed_items.items()])
+                print(noun1)
+                answer = random.choice(answers)
+                answer = answer.replace('[noun1]', noun1) #should do a recap of the order
+                return random.choice(answer)
             
         return None
     
@@ -434,7 +478,8 @@ def get_query(bartender, nlp):
         # timeout = max number of second wated for a phrase to start
         while True:
             try:
-                audio = r.listen(source, timeout=3)
+                print("speak")
+                audio = r.listen(source, timeout=4)
                 text = r.recognize_google(audio)
                 doc = nlp(text)
                 return doc
