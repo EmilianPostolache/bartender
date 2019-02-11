@@ -40,10 +40,10 @@ def join_with_and(collection):
     i = 0
     string = ''
     for x in collection:
-        if i != 0 and i != len(collection) - 2:
-            string += ','
+        if len(collection) > 1 and i != len(collection) - 2:
+            string += ', '
         elif i != 0 and i == len(collection) - 1:
-            string += 'and'
+            string += 'and '
         string += x
     return string
 

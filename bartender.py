@@ -150,9 +150,9 @@ class Bartender:
                            " I can suggest you a fresh [noun3]."
                            " Would you like it?"]
         b = ' '.join([drink.name for drink in self.bar.get_drinks()])
-        answers_negative = ["I'm sorry but we don't have that, would you like something else?",
-                            "Unfortunately we ran out of that, do you wish to order something else?"
-                            "We don't have such a drink, we just have  " + b + "  would you like any of these?"]
+        answers_negative = ["I'm sorry but we don't have [npun1], would you like something else?",
+                            "Unfortunately we ran out of [noun1], do you wish to order something else?"
+                            "We don't have [noun1], but we have  " + b + "  would you like any of these?"]
         
         
 #       local_order = {}
@@ -188,6 +188,49 @@ class Bartender:
                     ordered_items[root.lemma_] += num  # works also with unspecified number = 1
                 else:
                     bad_items.add(root.lemma_)  # items not in the list
+                    
+        #QUI PROVO A PRENDERE GLI ORDINI CON PAROLE COMPOSTE + CONTROLLO ESISTENZA DRINK --> solo per ordini singoli
+        if len(bad_items) > 0:
+            long_name = []
+            initial_list = []
+            enter = False
+            num = 1
+            for token in doc:
+                if token.lemma_ in ordering_verbs:
+                    for children in token.children:
+                        if (children.pos_ == 'NOUN' or children.pos_ == 'PROPN'):
+                            enter = True
+                            long_name.append(children.lemma_)
+                        if enter:
+                            for nephew in children.children:
+                                if (nephew.pos_ =='ADJ' or nephew.pos_ == 'NOUN' or nephew.pos_ == 'PROPN'):
+                                    initial_list.append(nephew.lemma_)
+                if token.pos_ == 'NUM' and token.dep_ == 'nummod' and (token.head.pos_ == 'NOUN' or token.head.pos_ == 'PROPN'):  
+                                try:
+                                    num = int(token.lemma_)
+                                except ValueError:
+                                    num = text2int(token.lemma_)
+                                break
+                
+            long_name = initial_list + long_name
+            composed_name = ''
+            for n,i in enumerate(long_name):
+                if n == len(long_name) -1 :
+                    composed_name = composed_name + i
+                else:
+                    composed_name = composed_name + i + ' '
+            print(composed_name)      
+            if composed_name in [drink.name for drink in self.bar.get_drinks()]:
+                self.state = 'waiting_order'
+                self.orders.setdefault(self.bar.get_drink(composed_name), 0)
+                self.orders[self.bar.get_drink(composed_name)] += num
+                return random.choice(answers_positive)
+              
+            elif composed_name in get_beer_list(): #NEED TO ADD ALSO WINE LIST
+                self.state = 'waiting_order'
+                answer_negative = random.choice(answers_negative)
+                answer_negative = answer_negative.replace("[noun1]", composed_name)
+                return answer_negative
 
         if ordered_items:
             self.state = 'waiting_order'
@@ -481,7 +524,7 @@ class Bartender:
         incomplete_sents = ["Okay, but please, tell me how many ",
                             "Yes I can do that, how many shall I remove ?"]
         invalid_delete = ["This is not a valid cancellation, you have not taken so many, will you delete or add something properly?",
-                          "can't do it, you have taken less than that, are you going to add or delete something propery?]
+                          "can't do it, you have taken less than that, are you going to add or delete something propery?"]
 
         removed_items = {}
         enter = False
@@ -574,12 +617,14 @@ def get_query(bartender, nlp):
                 print("API UNAVAILABLE")
             except sr.UnknownValueError:
                 # speech unintelligible
+                answer = bartender.encourage_talk()
+                synthesize_speech(answer)
+                time.sleep(1)
                 print("speech not recognized")
 
 
 def main_loop():
     bar = Bar()
-    bar.add_drink(Drink("ichnusa", "beer", 3.))
     bar.add_drink(Drink("ipa", "beer", 5.))
     bar.add_drink(Drink("blanche", "beer", 5.))
     bar.add_drink(Drink("heineken", "beer", 3.))
@@ -591,9 +636,13 @@ def main_loop():
     bar.add_drink(Drink("franziskaner", "beer", 3.5))
     bar.add_drink(Drink("leffe", "beer", 4.))
     bar.add_drink(Drink("ceres", "beer", 5.))
-    bar.add_drink(Drink("gotto d'oro", "wine", 1.5))
-    bar.add_drink(Drink("nero d'avola", "wine", 7.))
-    bar.add_drink(Drink("prosecco DOP", "wine", 10.))
+    bar.add_drink(Drink("prosecco dop", "wine", 20.))
+    bar.add_drink(Drink("don perignon", "wine", 100.))
+    bar.add_drink(Drink("chianti", "wine", 15.))
+    bar.add_drink(Drink("cristal", "wine", 100.))
+    bar.add_drink(Drink("cartizze", "wine", 50.))
+    
+    
 
     bartender = Bartender(bar)
     nlp = spacy.load('en_core_web_lg')
@@ -628,5 +677,26 @@ def synthesize_speech(text):
 
 if __name__ == '__main__':
     main_loop()
+    
+    
+    
+    #parte utile per debug
+    """
+    #synthesize_speech("Screaming Eagle Cabernet Sauvignon")
+    nlp = spacy.load('en_core_web_lg')
+    doc = nlp("I will take a Yazoo Amarillo Pale Ale")
+    
+    print(list(doc.noun_chunks))
+    for i in doc.noun_chunks:
+        print("noun_chunks rooot: " + i.root.text)
+    for token in doc:
+            print('text: ' + token.text, 'lemma: ' + token.lemma_, 'tag: ' + token.tag_,
+                  'pos: ' + token.pos_, 'head.lemma: ' + token.head.lemma_, 'dep_:' + token.dep_ , sep=' ' * 4)
+            print([t.text for t in token.children])
+            print('\n') """
+
+       
+ 
+        
 
 # git add / git commit / git push e pull
