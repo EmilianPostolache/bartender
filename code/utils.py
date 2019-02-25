@@ -49,14 +49,6 @@ def join_with_and(collection):
     return string
 
 
-def get_beer_list():
-    
-    file = open("../res/beer_list.txt", "r")
-    a = file.readlines()
-    file.close()
-    return a
-
-
 def debug(doc):
     for token in doc:
         print('text: ' + token.text, 'lemma: ' + token.lemma_, 'tag: ' + token.tag_,

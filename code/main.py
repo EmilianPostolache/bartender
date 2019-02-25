@@ -35,9 +35,9 @@ def get_query():
             doc = nlp(text)
             answer = bartender.respond(doc)
         except sr.UnknownValueError:
-            answer = bartender.encourage_talk()
+            answer = bartender.not_understood(None)
         except sr.WaitTimeoutError:
-            answer = bartender.encourage_talk()
+            answer = bartender.not_understood(None)
         except sr.RequestError as e:
             print(e)
             answer = "I'm offline at the moment. I'm sorry."
@@ -114,25 +114,33 @@ class Application(QWidget):
             self.thread.start()
 
 
+def debug_compound():
+    # parte utile per debug
+    # synthesize_speech("Screaming Eagle Cabernet Sauvignon")
+    nlp = spacy.load('en_core_web_lg')
+    doc = nlp("Could you suggest me a beer?")
+
+    print(list(doc.noun_chunks))
+    for i in doc.noun_chunks:
+        print("noun_chunks rooot: " + i.root.text)
+    for token in doc:
+        print('text: ' + token.text, 'lemma: ' + token.lemma_, 'tag: ' + token.tag_,
+             'pos: ' + token.pos_, 'head.lemma: ' + token.head.lemma_, 'dep_:' + token.dep_, sep=' ' * 4)
+        print([t.text for t in token.children])
+        print('\n')
+    # for nc in doc.noun_chunks:
+    #     for token in nc:
+    #         print('text: ' + token.text, 'lemma: ' + token.lemma_, 'tag: ' + token.tag_,
+    #               'pos: ' + token.pos_, 'head.lemma: ' + token.head.lemma_,
+    #               'dep_:' + token.dep_, 'children: ' + str(list(children.lemma_ for children in token.children))
+    #               , sep=' ' * 4)
+
+
 if __name__ == '__main__':
     bartender = create_bartender()
     app = QApplication(['Bender the Bartender'])
     ex = Application()
     sys.exit(app.exec_())
+    # debug_compound()
 
-#     # parte utile per debug
-#     """
-#     #synthesize_speech("Screaming Eagle Cabernet Sauvignon")
-#     nlp = spacy.load('en_core_web_lg')
-#     doc = nlp("I will take a Yazoo Amarillo Pale Ale")
-#
-#     print(list(doc.noun_chunks))
-#     for i in doc.noun_chunks:
-#         print("noun_chunks rooot: " + i.root.text)
-#     for token in doc:
-#             print('text: ' + token.text, 'lemma: ' + token.lemma_, 'tag: ' + token.tag_,
-#                   'pos: ' + token.pos_, 'head.lemma: ' + token.head.lemma_, 'dep_:' + token.dep_ , sep=' ' * 4)
-#             print([t.text for t in token.children])
-#             print('\n') """
-#
 # # git add / git commit / git push e pull

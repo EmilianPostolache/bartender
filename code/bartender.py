@@ -6,14 +6,11 @@ Created on Thu Feb  7 11:51:16 2019
 
 import random
 
-
 from bar import Drink
-from utils import text2int, join_with_and, get_beer_list, debug
+from utils import text2int, join_with_and, debug
 import datetime
 import numpy as np
 from enum import Enum
-# import pybabelnet as pb
-# from pybabelnet import Language
 
 
 class Bartender:
@@ -31,20 +28,35 @@ class Bartender:
         self.state = self.States.NEW_CLIENT
         self.orders = {}
         self.suggested_drink = None
+        self.known_drinks = {}
 
-    def suggest(self, category=None):
+        for category in Drink.CATEGORY:
+            with open("../res/" + category + "_list.txt", "r") as file:
+                a = file.readlines()
+                self.known_drinks[category] = [line.strip().lower() for line in a]
+
+    def get_drink_list(self, category):
+        return self.known_drinks[category]
+
+    def suggest(self, ordered_items=None, category=None):
         # suggest with a probability as high as the price
-        prices = np.array([drink.price for drink in self.bar.get_drink(category)])
-        probability = 1/np.sum(prices)*prices
-        return np.random.choice(self.bar.get_drink(category), probability)
+
+        if ordered_items:
+            drinks = list(set(self.bar.get_drinks(category)) - ordered_items.keys())
+        else:
+            drinks = self.bar.get_drinks(category)
+
+        prices = np.array([drink.price for drink in drinks])
+        probability = 1. / np.sum(prices)*prices
+        return np.random.choice(drinks, p=probability)
 
     def respond(self, doc):
         debug(doc)
         intents = []  # [self.check_sentence]
         if self.state is self.States.NEW_CLIENT:
-            intents.extend([self.greetings, self.specific_order, self.suggestion, self.generic_order])
+            intents.extend([self.greetings, self.specific_order, self.generic_order, self.suggestion])
         elif self.state is self.States.WAITING_ORDER:
-            intents.extend([self.specific_order, self.suggestion, self.generic_order, self.end_order, self.delete_item])
+            intents.extend([self.specific_order, self.generic_order, self.suggestion, self.delete_item, self.end_order])
         elif self.state is self.States.PAYMENT:
             intents.extend([self.confirmation_payment, self.delete_item])
         elif self.state is self.States.ACCEPT_SUGGESTION:
@@ -61,16 +73,6 @@ class Bartender:
             answer = intent(doc)
             if answer:
                 return answer
-
-    # def check_sentence(self, doc):
-    #     if len(list(doc.sents)) > 1:
-    #         if list(doc.sents)[0].text in self.GREETING_QUERIES:
-    #             return None
-    #         else:
-    #             # we want just short sentences
-    #             return random.choice(['Please be more specific.',
-    #                                   'I think this does not make much sense, could you be more precise?',
-    #                                   'This goes beyond my knowledge, what did you mean?'])
 
     def greetings(self, doc):
         greeting_queries = ["hello", "hi", "greetings", "good evening", "what's up", "good morning",
@@ -91,17 +93,11 @@ class Bartender:
         for token in doc:
             if token.pos_ == 'VERB':
                 return None
-        # for token in doc:
-        #     if 'Greeting_words_and_phrases' in [cat.category for cat in
-        #                                                  pb.get_synsets(token.text, from_langs=[Language.EN],
-        #                                                                 to_langs=[Language.EN])[0].categories()]:
-        #         return random.choice(greeting_1) + random.choice(greeting_2)
 
         for greeting in greeting_queries:
             if greeting in doc.text:
                 self.state = self.States.WAITING_ORDER
                 return random.choice(greeting_1) + random.choice(greeting_2)
-        return None
 
     def specific_order(self, doc):
         # spacy returns verbs at infinity form with .lemma_
@@ -110,23 +106,21 @@ class Bartender:
                             "Got it! Anything else to drink?",
                             "Excellent choice! What else would you like to drink?"]
         answers_partial = ["Ok I will add [noun1] to the list. Unfortunately we don't have [noun2]"]
-        answers_suggest = ["I will add [noun1] to the order. Unfortunately we don't have [noun2]."
-                           " I can suggest you a fresh [noun3]."
+        answers_suggest = ["I will add [noun1] to the order. Unfortunately we don't have [noun2]." +
+                           " I can suggest you a fresh [noun3]." +
                            " Would you like it?"]
         answers_negative = ["I'm sorry but we don't have [noun1], would you like something else?",
-                            "Unfortunately we ran out of [noun1], do you wish to order something else?"
-                            "We don't have [noun1], but we have [noun2]! Would you like any of these?"]
+                            "Unfortunately we ran out of [noun1], do you wish to order something else?",
+                            "We don't have [noun1]! [noun2]! Would you like any of these?",
+                            "Sorry but we are out of [noun1],  [noun2]."]
 
-        bad_items = set()
+        bad_items = {}  # set()
         ordered_items = {}
 
         print(list(doc.noun_chunks))
         # noun_chunks:  spacy command which divides 'noun plus the words' describing the noun
         for span in doc.noun_chunks:
             root = span.root
-            # penso che il controlo sulla dependency venga fatto qua, non solo il nsubj potrebbe essere tra
-            # parole che non ci interessano
-            # non ci deve essere una dipendenza dal root quindi l'ho tolta
             if root.dep_ == 'nsubj':  # ex I or Mary , this noun_chunk is not relevant
                 continue
 
@@ -135,65 +129,37 @@ class Bartender:
                (root.dep_ == 'conj' and (root.head.pos_ == 'NOUN' or root.head.pos_ == "PROPN")) or
                (root.dep_ == 'appos' and (root.head.pos_ == 'NOUN' or root.head.pos_ == "PROPN"))):
 
-                if root.lemma_ in [drink.name for drink in self.bar.get_drinks()]:
-                    ordered_items.setdefault(root.lemma_, 0)
-                    num = 1
-                    for token in span:
-                        if token.pos_ == 'NUM' and token.dep_ == 'nummod' and token.head == root:  # number
-                            try:
-                                num = int(token.lemma_)
-                            except ValueError:
-                                num = text2int(token.lemma_)
-                            break
-                    ordered_items[root.lemma_] += num  # works also with unspecified number = 1
+                long_name = []
+                num = 1
+                for child in root.children:
+                    if child.dep_ == 'compound':
+                        long_name.append(child.text)
+                    if child.pos_ == 'NUM' and child.dep_ == 'nummod':
+                        try:
+                            num = int(child.lemma_)
+                        except ValueError:
+                            num = text2int(child.lemma_)
+                        break
+
+                long_name.append(root.lemma_)
+                composed_name = ''
+                for n, i in enumerate(long_name):
+                    if n == len(long_name) - 1:
+                        composed_name = composed_name + i
+                    else:
+                        composed_name = composed_name + i + ' '
+
+                composed_name = composed_name.lower()
+
+                if composed_name in [drink.name for drink in self.bar.get_drinks()]:
+                    ordered_items.setdefault(composed_name, 0)
+                    ordered_items[composed_name] += num  # works also with unspecified number = 1
+
                 else:
-                    bad_items.add(root.lemma_)  # items not in the list
-                    
-        # QUI PROVO A PRENDERE GLI ORDINI CON PAROLE COMPOSTE + CONTROLLO ESISTENZA DRINK --> solo per ordini singoli
-        if len(bad_items) > 0:
-            long_name = []
-            initial_list = []
-            enter = False
-            num = 1
-            for token in doc:
-                if token.lemma_ in ordering_verbs:
-                    for children in token.children:
-                        if children.pos_ == 'NOUN' or children.pos_ == 'PROPN':
-                            enter = True
-                            long_name.append(children.lemma_)
-                        if enter:
-                            for nephew in children.children:
-                                if nephew.pos_ == 'ADJ' or nephew.pos_ == 'NOUN' or nephew.pos_ == 'PROPN':
-                                    initial_list.append(nephew.lemma_)
-                if token.pos_ == 'NUM' and token.dep_ == 'nummod' and (token.head.pos_ == 'NOUN'
-                                                                       or token.head.pos_ == 'PROPN'):
-                                try:
-                                    num = int(token.lemma_)
-                                except ValueError:
-                                    num = text2int(token.lemma_)
-                                break
-                
-            long_name = initial_list + long_name
-            composed_name = ''
-            for n, i in enumerate(long_name):
-                if n == len(long_name) - 1:
-                    composed_name = composed_name + i
-                else:
-                    composed_name = composed_name + i + ' '
-            # sprint(composed_name)
-            if composed_name in [drink.name for drink in self.bar.get_drinks()]:
-                self.state = self.States.WAITING_ORDER
-                self.orders.setdefault(self.bar.get_drink(composed_name), 0)
-                self.orders[self.bar.get_drink(composed_name)] += num
-                return random.choice(answers_positive)
-              
-            elif composed_name in get_beer_list():  # NEED TO ADD ALSO WINE LIST
-                self.state = self.States.WAITING_ORDER
-                answer_negative = random.choice(answers_negative)
-                answer_negative = answer_negative.replace("[noun1]", composed_name)
-                drink_list = ' '.join([drink.name for drink in self.bar.get_drinks()])
-                answer_negative = answer_negative.replace("[noun2]", drink_list)
-                return answer_negative
+                    for category in Drink.CATEGORY:
+                        if composed_name in self.get_drink_list(category):
+                            bad_items[composed_name] = category  # add(composed_name)  # items not in the list
+                # ASSICURARSI CHE VA BENE CON CASI IN CUI NON FA IL MATCH...
 
         if ordered_items:
             self.state = self.States.WAITING_ORDER
@@ -204,107 +170,120 @@ class Bartender:
             if not bad_items:
                 return random.choice(answers_positive)
 
-            if ordered_items:
-                if len(bad_items) > 1:
-                    answer_partial = random.choice(answers_partial)
+            if len(bad_items) > 1:
+                answer_partial = random.choice(answers_partial)
 
-                    noun1 = join_with_and([str(num) + ' ' + item for item, num in ordered_items.items()])
-                    noun2 = join_with_and(bad_items)
+                noun1 = join_with_and([str(num) + ' ' + item for item, num in ordered_items.items()])
+                noun2 = join_with_and(bad_items.keys())
 
-                    answer_partial = answer_partial.replace('[noun1]', noun1)
-                    answer_partial = answer_partial.replace('[noun1]', noun2)
-                    return answer_partial
+                answer_partial = answer_partial.replace('[noun1]', noun1)
+                answer_partial = answer_partial.replace('[noun2]', noun2)
+                return answer_partial
 
-                elif len(bad_items) == 1:
-                    self.state = self.States.ACCEPT_SUGGESTION
-                    a = self.suggest()
-                    self.suggested_drink = a
+            elif len(bad_items) == 1:
+                self.state = self.States.ACCEPT_SUGGESTION
+                bad_item = list(bad_items.keys())[0]
+                a = self.suggest(ordered_items, category=bad_items[bad_item])
+                self.suggested_drink = a
 
-                    answer_suggest = random.choice(answers_suggest)
-                    noun1 = join_with_and([str(num) + ' ' + item for item, num in ordered_items.items()])
+                answer_suggest = random.choice(answers_suggest)
+                noun1 = join_with_and([str(num) + ' ' + item for item, num in ordered_items.items()])
 
-                    answer_suggest = answer_suggest.replace('[noun1]', noun1)
-                    answer_suggest = answer_suggest.replace("[noun2]", bad_items.pop())
-                    answer_suggest = answer_suggest.replace("[noun3]", a.name)
-                    return answer_suggest
-        return None
+                answer_suggest = answer_suggest.replace('[noun1]', noun1)
+                answer_suggest = answer_suggest.replace("[noun2]", bad_item)
+                answer_suggest = answer_suggest.replace("[noun3]", a.name)
+                return answer_suggest
+
+        elif len(bad_items) > 1:
+            self.state = self.States.WAITING_ORDER
+            answer_negative = random.choice(answers_negative)
+            noun2 = join_with_and(bad_items.keys())
+            answer_negative = answer_negative.replace("[noun1]", noun2)
+            ordered_categories = list(bad_items.values())
+            drink_list = ''
+            for cat in ordered_categories:
+                intro = 'Our list of  ' + cat + 's is the following: '
+                drink_list = drink_list + intro + join_with_and([drink.name for drink in self.bar.get_drinks(cat)])
+            answer_negative = answer_negative.replace("[noun2]", drink_list)
+            return answer_negative
 
     def generic_order(self, doc):
-        # spacy returns verbs at ininity form with .lemma_
         ordering_verbs = ["order", "can", "like", "have", "take", "make", "give", "want", "get", "buy", "add"]
-        containers = ["drink", "glass",  "pint"]
         answers_list = ["We have the following [noun]s: ", "Our selection of [noun] is the following: "]
-        answers_negative = ["I'm sorry but we don't have that, would you like something else?"]
         answers_suggest = ["I can suggest you a nice [noun]. Would you like it?"]
+        probability = 0.8
 
+        enter = False
         for token in doc:
-            # dobbiamo pensare al controllo sul complemento oggeto e piu in la
-            # un meccanismo che fa capire se quella parola sia una birra/ un vino (in modo semantico)
-            # print(token.tag_, token.head.text, token.lemma_)
-            if token.tag_ == "NN" and token.head.text in ordering_verbs:
-                for category in Drink.CATEGORY:
-                    if token.lemma_ == category:
-                        if random.random() < 0.8:
-                            self.state = self.States.WAITING_ORDER
-                            answer = random.choice(answers_list)
-                            answer = answer.replace("[noun]", category)
-                            answer = answer + ' '.join([drink.name for drink in self.bar.get_drinks(category)])
-                            return answer
-                        else:
-                            a = self.suggest()
-                            self.state = self.States.ACCEPT_SUGGESTION
-                            answer = random.choice(answers_suggest)
-                            answer = answer.replace("[noun]", a.name)
-                            self.suggested_drink = a
-                            return answer
-        return None
+            if token.lemma_ in ordering_verbs:
+                enter = True
+            if enter and token.lemma_ in Drink.CATEGORY:
+
+                if random.random() < probability:
+                    self.state = self.States.WAITING_ORDER
+                    answer = random.choice(answers_list)
+                    answer = answer.replace("[noun]", token.lemma_)
+                    answer = answer + join_with_and([drink.name for drink in self.bar.get_drinks(token.lemma_)])
+                    return answer
+                else:
+                    a = self.suggest(category=token.lemma_)
+                    self.state = self.States.ACCEPT_SUGGESTION
+                    answer = random.choice(answers_suggest)
+                    answer = answer.replace("[noun]", a.name)
+                    self.suggested_drink = a
+                    return answer
 
     def suggestion(self, doc):
-        # aggiungere BE per chiedere cose del tipo "is a good choice",
-        # is a [ADJ] idea
-        # is a [ADJ] choice
-        # is a [ADJ] uggestion
-        # give an [ADJ] idea
-        # give an [ADJ] choice
         suggestion_verbs = ["advice", "recommend", "suggest", "think"]
-
+        support_verbs = ["give", "be"]
+        support_nouns = ["advice", "idea", "suggestion", "choice", "recommendation"]
+        answer_suggest_cat = ["I recommend you a [noun1] which is an excellent [noun2]. Would you try it?",
+                              "You should try the [noun1] it's a very typical Earth [noun2]. Will you get a taste?"]
+        answers_suggest = ["In my opinion [noun1] is a really good [noun2]. Do you want it??",
+                           "You can't say you have tried the Earth taste until you drink the [noun1]. " +
+                           "Would you try it?",
+                           "The [noun1] is renowned among terrestrial beings to be a terrific [noun2]. " +
+                           "Shall I add it?"]
+        enter = False
         for token in doc:  # look for a suggestion of a certain category
-                            
-                if (token.tag_ == "NN" and token.lemma_ in Drink.CATEGORY and token.head.pos_ == "VERB"  
-                   and token.head.lemma_ in suggestion_verbs):
+            if token.lemma_ in suggestion_verbs:
+                enter = True
+            if token.lemma_ in support_verbs:
+                for child in token.children:
+                    if (child.dep_ == 'dobj' or child.dep_ == 'attr') and child.lemma_ in support_nouns:
+                        enter = True
+        if enter:
+            for token in doc:
+                if token.lemma_ in Drink.CATEGORY:
+                    enter2 = True
                     a = self.suggest(token.lemma_)
-                    answer_suggest = ["I recommend you a  " + a.name + "  which is an excellent " + token.lemma_,
-                                      "I advise you a  " + a.name + "  it's really a good one",
-                                      "You should try the  " + a.name + "  it's a very typical Earth " + token.lemma_]
                     self.state = self.States.ACCEPT_SUGGESTION
                     self.suggested_drink = a
-                    return random.choice(answer_suggest)
-                
-        for token in doc:  # look for a generic suggestion
-            
-            if token.pos_ == "VERB" and token.lemma_ in suggestion_verbs:
+                    answer = random.choice(answer_suggest_cat)
+                    answer = answer.replace('[noun1]', a.name)
+                    answer = answer.replace('[noun2]', token.lemma_)
+                    return answer
 
-                a = self.suggest()
-                answers_suggest = ["In my opinion " + a.name + " is really good. Would you try it?",
-                                   "You can't say you have tried the Earth taste until you drink the " + a.name,
-                                   "The " + a.name + " is renowned among terrestrial beings "]
-                self.state = self.States.ACCEPT_SUGGESTION
-                self.suggested_drink = a
-                return random.choice(answers_suggest)
-        return None
+            # entra quando non e' stata trovata una categoria (consiglio generico)
+            a = self.suggest()
+            self.state = self.States.ACCEPT_SUGGESTION
+            self.suggested_drink = a
+            answer = random.choice(answers_suggest)
+            answer = answer.replace('[noun1]', a.name)
+            answer = answer.replace('[noun2]', a.category)
+            return answer
 
     def end_order(self, doc):
-        # vedere come aggiungere "that's it", "I'm done", "That's all"
-        positive = ['yes', 'positive', 'okay', 'right', 'good', 'yeah', 'yep', 'certainly']
+        positive = ['yes', 'positive', 'okay', 'right', 'good', 'yeah', 'yep', 'certainly', 'sure']
         negative = ['no', "that's it", "it's enough", "that's all", "nothing else", "no more", "nope", "enough"]
         continue_answers = ["what can I do for you?", ". What would you like?"]
         recap_answers = ["So, you have ordered   [noun1] ", "A quick recap of what you've ordered:   [noun1] "]
         payment_answers = [" which amounts to [noun] euros. Proceed with the payment?",
                            " that makes a total of [noun] euros. Shall we proceed?"]
-        nothing_ordered = ["Well that's not gonna cost anything since your order is empty... do you intend to actually order something?",
+        nothing_ordered = ["Well that's not gonna cost anything since your order is empty..."+
+                           " do you intend to actually order something?",
                            "your order is empty, do you intend to actually order something?",
                            "are you gonna order for real?"]
-        
         for token in doc:
             if token.lemma_ in positive:
                 self.state = self.States.WAITING_ORDER
@@ -344,7 +323,7 @@ class Bartender:
 
     def confirmation_payment(self, doc):
         # vedere come aggiungere "that's it", "I'm done", "That's all"
-        positive = ['yes', 'positive', 'okay', 'ok', 'right', 'good', 'yeah', 'yep', 'certainly', 'fine']
+        positive = ['yes', 'positive', 'okay', 'ok', 'right', 'good', 'yeah', 'yep', 'certainly', 'fine', 'sure']
         negative = ['no', 'nope', 'modify']
         # aggiungere plurale quando viene modellato
         finish_answers = ["Here is your drink!", "Enjoy your drink!"]
@@ -381,7 +360,7 @@ class Bartender:
         return None
 
     def confirmation_suggestion(self, doc):
-        positive = ['yes', 'positive', 'okay', 'right', 'good', 'like', 'love', 'cool', 'course', 'ok']
+        positive = ['yes', 'positive', 'okay', 'right', 'good', 'like', 'love', 'cool', 'course', 'ok', 'sure']
         negative = ['no', 'nope', 'modify']
         for token in doc.sents:
             if token.text in positive:
@@ -547,7 +526,6 @@ class Bartender:
                 answer2 = answer2.replace("[noun2]", noun2)
                 answer = answer1 + answer2
                 return answer
-            
         return None
     
     def encourage_talk(self):
